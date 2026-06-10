@@ -20,6 +20,7 @@ ALLOWED_DOC_IDS = frozenset(
         "sla_p1_2026",
         "it_helpdesk_faq",
         "hr_leave_policy",
+        "access_control_sop"
     }
 )
 
@@ -106,6 +107,15 @@ def clean_rows(
                 {
                     **raw,
                     "reason": "stale_hr_policy_effective_date",
+                    "effective_date_normalized": eff_norm,
+                }
+            )
+            continue
+        if doc_id == "hr_leave_policy" and "10 ngày phép năm" in text:
+            quarantine.append(
+                {
+                    **raw,
+                    "reason": "stale_hr_policy_10d_annual",
                     "effective_date_normalized": eff_norm,
                 }
             )
