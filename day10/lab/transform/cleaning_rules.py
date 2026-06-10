@@ -120,6 +120,47 @@ def clean_rows(
                 }
             )
             continue
+            
+        if doc_id == "access_control_sop" and eff_norm < "2026-01-01":
+            quarantine.append(
+                {
+                    **raw,
+                    "reason": "stale_access_control_effective_date",
+                    "effective_date_normalized": eff_norm,
+                }
+            )
+            continue
+
+        if doc_id == "sla_p1_2026" and eff_norm < "2026-01-01":
+            quarantine.append(
+                {
+                    **raw,
+                    "reason": "stale_sla_p1_effective_date",
+                    "effective_date_normalized": eff_norm,
+                }
+            )
+            continue
+        if doc_id == "access_control_sop":
+            access_text_norm = _norm_text(text)
+            is_l4_admin = (
+                "level 4" in access_text_norm
+                or "admin access" in access_text_norm
+            )
+            has_required_approver = (
+                "it manager" in access_text_norm
+                or "ciso" in access_text_norm
+            )
+
+            if is_l4_admin and not has_required_approver:
+                quarantine.append(
+                    {
+                        **raw,
+                        "reason": "access_control_l4_missing_required_approver",
+                        "effective_date_normalized": eff_norm,
+                    }
+                )
+                continue
+            
 
         if not text:
             quarantine.append({**raw, "reason": "missing_chunk_text"})

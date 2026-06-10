@@ -112,5 +112,56 @@ def run_expectations(cleaned_rows: List[Dict[str, Any]]) -> Tuple[List[Expectati
         )
     )
 
+    # E7: cleaned data phải còn đủ các doc_id phục vụ grading
+    required_doc_ids = {
+        "policy_refund_v4",
+        "sla_p1_2026",
+        "it_helpdesk_faq",
+        "hr_leave_policy",
+        "access_control_sop",
+    }
+    present_doc_ids = {
+        (r.get("doc_id") or "").strip()
+        for r in cleaned_rows
+    }
+    missing_required_doc_ids = sorted(required_doc_ids - present_doc_ids)
+    ok7 = len(missing_required_doc_ids) == 0
+    results.append(
+        ExpectationResult(
+            "required_grading_doc_ids_present",
+            ok7,
+            "halt",
+            f"missing_doc_ids={missing_required_doc_ids}",
+        )
+    )
+
+    # E8: Level 4/Admin Access phải chứa approver bắt buộc cho grading
+    access_l4_rows = [
+        r
+        for r in cleaned_rows
+        if r.get("doc_id") == "access_control_sop"
+        and (
+            "level 4" in (r.get("chunk_text") or "").lower()
+            or "admin access" in (r.get("chunk_text") or "").lower()
+        )
+    ]
+    access_l4_with_approver = [
+        r
+        for r in access_l4_rows
+        if (
+            "it manager" in (r.get("chunk_text") or "").lower()
+            or "ciso" in (r.get("chunk_text") or "").lower()
+        )
+    ]
+    ok8 = len(access_l4_with_approver) >= 1
+    results.append(
+        ExpectationResult(
+            "access_control_l4_has_approver",
+            ok8,
+            "halt",
+            f"l4_rows={len(access_l4_rows)}, with_approver={len(access_l4_with_approver)}",
+        )
+    )
+
     halt = any(not r.passed and r.severity == "halt" for r in results)
     return results, halt
