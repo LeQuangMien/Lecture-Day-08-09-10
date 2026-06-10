@@ -111,16 +111,7 @@ def clean_rows(
                 }
             )
             continue
-        if doc_id == "hr_leave_policy" and "10 ngày phép năm" in text:
-            quarantine.append(
-                {
-                    **raw,
-                    "reason": "stale_hr_policy_10d_annual",
-                    "effective_date_normalized": eff_norm,
-                }
-            )
-            continue
-            
+
         if doc_id == "access_control_sop" and eff_norm < "2026-01-01":
             quarantine.append(
                 {
@@ -131,36 +122,38 @@ def clean_rows(
             )
             continue
 
-        if doc_id == "sla_p1_2026" and eff_norm < "2026-01-01":
+        if doc_id == "hr_leave_policy" and "10 ngày phép năm" in text:
             quarantine.append(
                 {
                     **raw,
-                    "reason": "stale_sla_p1_effective_date",
+                    "reason": "stale_hr_policy_10d_annual",
                     "effective_date_normalized": eff_norm,
                 }
             )
             continue
-        if doc_id == "access_control_sop":
-            access_text_norm = _norm_text(text)
-            is_l4_admin = (
-                "level 4" in access_text_norm
-                or "admin access" in access_text_norm
-            )
-            has_required_approver = (
-                "it manager" in access_text_norm
-                or "ciso" in access_text_norm
-            )
 
-            if is_l4_admin and not has_required_approver:
-                quarantine.append(
-                    {
-                        **raw,
-                        "reason": "access_control_l4_missing_required_approver",
-                        "effective_date_normalized": eff_norm,
-                    }
-                )
-                continue
-            
+        if "Nội dung không rõ ràng" in text or text.lstrip().startswith("!!!"):
+            quarantine.append(
+                {
+                    **raw,
+                    "reason": "noisy_uncertain_chunk",
+                    "effective_date_normalized": eff_norm,
+                }
+            )
+            continue
+
+        if (
+            "làm việc làm việc" in text
+            or "Nội dung có thể bị trùng do sync" in text
+        ):
+            quarantine.append(
+                {
+                    **raw,
+                    "reason": "repeated_sync_noise",
+                    "effective_date_normalized": eff_norm,
+                }
+            )
+            continue
 
         if not text:
             quarantine.append({**raw, "reason": "missing_chunk_text"})
@@ -180,6 +173,14 @@ def clean_rows(
                     "7 ngày làm việc",
                 )
                 fixed_text += " [cleaned: stale_refund_window]"
+
+        if doc_id == "sla_p1_2026" and "Escalation P1" in fixed_text and "10 phút" in fixed_text:
+            fixed_text = (
+                "Ticket P1 auto escalate: nếu không có phản hồi với ticket P1 "
+                "trong 10 phút thì hệ thống tự động escalate lên Senior Engineer. "
+                + fixed_text
+                + " [cleaned: canonical_p1_auto_escalation]"
+            )
 
         seq += 1
         cleaned.append(

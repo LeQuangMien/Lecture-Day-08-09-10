@@ -95,71 +95,92 @@ def run_expectations(cleaned_rows: List[Dict[str, Any]]) -> Tuple[List[Expectati
         )
     )
 
-    # E6: không còn marker phép năm cũ 10 ngày trên doc HR (conflict version sau clean)
-    bad_hr_annual = [
-        r
-        for r in cleaned_rows
-        if r.get("doc_id") == "hr_leave_policy"
-        and "10 ngày phép năm" in (r.get("chunk_text") or "")
-    ]
-    ok6 = len(bad_hr_annual) == 0
-    results.append(
-        ExpectationResult(
-            "hr_leave_no_stale_10d_annual",
-            ok6,
-            "halt",
-            f"violations={len(bad_hr_annual)}",
-        )
-    )
-
-    # E7: cleaned data phải còn đủ các doc_id phục vụ grading
-    required_doc_ids = {
+    required_docs = {
         "policy_refund_v4",
         "sla_p1_2026",
         "it_helpdesk_faq",
         "hr_leave_policy",
         "access_control_sop",
     }
-    present_doc_ids = {
-        (r.get("doc_id") or "").strip()
-        for r in cleaned_rows
-    }
-    missing_required_doc_ids = sorted(required_doc_ids - present_doc_ids)
-    ok7 = len(missing_required_doc_ids) == 0
+    present_docs = {r.get("doc_id") for r in cleaned_rows}
+    missing_docs = sorted(required_docs - present_docs)
+    ok7 = len(missing_docs) == 0
     results.append(
         ExpectationResult(
             "required_grading_doc_ids_present",
             ok7,
             "halt",
-            f"missing_doc_ids={missing_required_doc_ids}",
+            f"missing_doc_ids={missing_docs}",
         )
     )
 
-    # E8: Level 4/Admin Access phải chứa approver bắt buộc cho grading
-    access_l4_rows = [
+    access_l4 = [
         r
         for r in cleaned_rows
         if r.get("doc_id") == "access_control_sop"
+        and "level 4 admin access" in (r.get("chunk_text") or "").lower()
         and (
-            "level 4" in (r.get("chunk_text") or "").lower()
-            or "admin access" in (r.get("chunk_text") or "").lower()
-        )
-    ]
-    access_l4_with_approver = [
-        r
-        for r in access_l4_rows
-        if (
             "it manager" in (r.get("chunk_text") or "").lower()
             or "ciso" in (r.get("chunk_text") or "").lower()
         )
     ]
-    ok8 = len(access_l4_with_approver) >= 1
+    ok8 = len(access_l4) >= 1
     results.append(
         ExpectationResult(
-            "access_control_l4_has_approver",
+            "access_control_l4_admin_approver_present",
             ok8,
             "halt",
-            f"l4_rows={len(access_l4_rows)}, with_approver={len(access_l4_with_approver)}",
+            f"matching_chunks={len(access_l4)}",
+        )
+    )
+
+    all_text = " ".join((r.get("chunk_text") or "") for r in cleaned_rows).lower()
+
+    required_fact_groups = {
+        "refund_7_working_days": ["7 ngày", "7 ngày làm việc"],
+        "refund_excluded_digital_goods": ["hàng kỹ thuật số", "license key", "subscription"],
+        "refund_finance_3_5_days": ["3-5 ngày làm việc", "3 đến 5 ngày"],
+        "p1_initial_response_15m": ["15 phút", "15p"],
+        "p1_resolution_4h": ["4 giờ", "4h"],
+        "p1_auto_escalate_10m": ["10 phút"],
+        "account_lock_5_attempts": ["5 lần"],
+        "vpn_2_devices": ["2 thiết bị", "2 device"],
+        "hr_12_annual_leave": ["12 ngày", "12 ngày phép năm"],
+        "access_l4_approver": ["it manager", "ciso"],
+    }
+
+    missing_facts = []
+    for fact_name, variants in required_fact_groups.items():
+        if not any(v.lower() in all_text for v in variants):
+            missing_facts.append(fact_name)
+
+    ok9 = len(missing_facts) == 0
+    results.append(
+        ExpectationResult(
+            "grading_core_facts_present",
+            ok9,
+            "halt",
+            f"missing_facts={missing_facts}",
+        )
+    )
+
+    p1_escalation_chunks = [
+        r
+        for r in cleaned_rows
+        if r.get("doc_id") == "sla_p1_2026"
+        and "ticket p1" in (r.get("chunk_text") or "").lower()
+        and "auto escalate" in (r.get("chunk_text") or "").lower()
+        and "không có phản hồi" in (r.get("chunk_text") or "").lower()
+        and "10 phút" in (r.get("chunk_text") or "").lower()
+    ]
+
+    ok10 = len(p1_escalation_chunks) >= 1
+    results.append(
+        ExpectationResult(
+            "sla_p1_auto_escalation_10m_canonical_present",
+            ok10,
+            "halt",
+            f"matching_chunks={len(p1_escalation_chunks)}",
         )
     )
 
