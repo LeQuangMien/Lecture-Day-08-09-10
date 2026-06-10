@@ -1,7 +1,7 @@
 # Data contract — Lab Day 10 (tiếp nối artifact CS + IT Helpdesk)
-# Sinh viên bổ sung owner, SLA freshness, và nguồn canonical.
+# Đồng bộ với cleaning_rules.py, expectations.py và manifest run_id=2026-06-10T08-19Z.
 
-version: "1.0"
+version: "1.1"
 dataset: "kb_chunk_export"
 owner_team: "CS + IT Helpdesk Data Pipeline Team"
 
@@ -9,46 +9,124 @@ schema_cleaned:
   chunk_id:
     type: string
     required: true
-    description: "ID ổn định sau clean (thường hash hoặc doc_id + seq)"
+    description: "ID ổn định sau clean, dùng để upsert/prune vector store."
   doc_id:
     type: string
     required: true
-    description: "Khóa logic tài liệu nguồn (vd policy_refund_v4)"
+    description: "Khóa logic tài liệu nguồn, ví dụ policy_refund_v4."
+    allowed_values:
+      - policy_refund_v4
+      - sla_p1_2026
+      - it_helpdesk_faq
+      - hr_leave_policy
+      - access_control_sop
   chunk_text:
     type: string
     required: true
     constraints:
       min_length: 8
+    description: "Nội dung chunk sau clean/canonicalization, dùng để embed vào Chroma."
   effective_date:
     type: date
     required: true
+    format: "YYYY-MM-DD"
+    description: "Ngày hiệu lực đã normalize sang ISO date."
   exported_at:
     type: datetime
     required: true
+    description: "Timestamp export từ source; dùng cho freshness monitoring."
 
 quality_rules:
-  - id: "no_duplicate_chunk_text"
+  - id: "allowed_doc_id"
+    description: "Chỉ cho phép các doc_id nằm trong allowed_doc_ids; source lạ bị quarantine."
+    severity: "halt"
+  - id: "effective_date_iso_yyyy_mm_dd"
+    description: "effective_date phải parse được và normalize về YYYY-MM-DD."
+    severity: "halt"
+  - id: "missing_chunk_text"
+    description: "chunk_text rỗng bị quarantine."
+    severity: "halt"
+  - id: "duplicate_chunk_text"
+    description: "Chunk trùng nội dung sau normalize whitespace/lowercase bị quarantine, giữ bản đầu."
     severity: "warn"
   - id: "no_stale_refund_window"
-    description: "Không được để chunk policy refund chứa cửa sổ 14 ngày (lệch so với v4 = 7 ngày)"
+    description: "Không để policy refund hiện hành chứa cửa sổ 14 ngày; canonical v4 là 7 ngày làm việc."
+    severity: "halt"
+  - id: "stale_hr_policy_effective_date"
+    description: "hr_leave_policy có effective_date trước 2026-01-01 bị quarantine."
+    severity: "halt"
+  - id: "stale_hr_policy_10d_annual"
+    description: "hr_leave_policy chứa marker bản cũ '10 ngày phép năm' bị quarantine."
+    severity: "halt"
+  - id: "stale_access_control_effective_date"
+    description: "access_control_sop có effective_date trước 2026-01-01 bị quarantine."
+    severity: "halt"
+  - id: "noisy_uncertain_chunk"
+    description: "Chunk có marker 'Nội dung không rõ ràng' hoặc bắt đầu bằng '!!!' bị quarantine."
+    severity: "warn"
+  - id: "repeated_sync_noise"
+    description: "Chunk có dấu hiệu lỗi sync/lặp cụm từ bị quarantine."
+    severity: "warn"
+  - id: "canonical_p1_auto_escalation"
+    description: "Chunk P1 escalation được canonicalize để giữ fact 'không có phản hồi trong 10 phút'."
+    severity: "halt"
+
+expectations:
+  - id: "min_one_row"
+    severity: "halt"
+  - id: "no_empty_doc_id"
+    severity: "halt"
+  - id: "refund_no_stale_14d_window"
+    severity: "halt"
+  - id: "chunk_min_length_8"
+    severity: "warn"
+  - id: "effective_date_iso_yyyy_mm_dd"
+    severity: "halt"
+  - id: "required_grading_doc_ids_present"
+    description: "Cleaned data phải còn đủ 5 doc_id phục vụ grading."
+    severity: "halt"
+  - id: "access_control_l4_admin_approver_present"
+    description: "Phải có chunk access_control_sop cho Level 4 Admin Access với IT Manager/CISO."
+    severity: "halt"
+  - id: "grading_core_facts_present"
+    description: "Cleaned data phải chứa đủ các fact chính cho 10 câu grading."
+    severity: "halt"
+  - id: "sla_p1_auto_escalation_10m_canonical_present"
+    description: "Phải có chunk canonical cho câu P1 auto escalate sau 10 phút."
     severity: "halt"
 
 freshness:
-  measured_at: "publish"  # ingest | cleaned | publish
+  measured_at: "exported_at"
+  manifest_field: "latest_exported_at"
   sla_hours: 24
-  alert_channel: "__TODO__"
+  pass_condition: "age_hours <= sla_hours"
+  warn_condition: "missing or unparsable latest_exported_at"
+  fail_condition: "age_hours > sla_hours"
+  alert_channel: "group_report/runbook"
+  latest_observed:
+    run_id: "2026-06-10T08-19Z"
+    latest_exported_at: "2026-04-11T00:00:00"
+    status: "FAIL"
+    reason: "freshness_sla_exceeded"
 
 canonical_sources:
   - path: "data/docs/policy_refund_v4.txt"
     doc_id: "policy_refund_v4"
+    owner: "CS/Finance Policy"
   - path: "data/docs/sla_p1_2026.txt"
     doc_id: "sla_p1_2026"
+    owner: "IT Helpdesk"
   - path: "data/docs/it_helpdesk_faq.txt"
     doc_id: "it_helpdesk_faq"
+    owner: "IT Helpdesk"
   - path: "data/docs/hr_leave_policy.txt"
     doc_id: "hr_leave_policy"
+    owner: "HR"
+  - path: "data/docs/access_control_sop.txt"
+    doc_id: "access_control_sop"
+    owner: "IT Security"
 
-# Baseline allowlist export — nhóm mở rộng doc mới phải đồng bộ cleaning_rules + contract.
+# Baseline allowlist export — phải đồng bộ với transform/cleaning_rules.py.
 allowed_doc_ids:
   - policy_refund_v4
   - sla_p1_2026
@@ -56,6 +134,20 @@ allowed_doc_ids:
   - hr_leave_policy
   - access_control_sop
 
-# Merit/Distinction: có thể đưa cutoff versioning vào env và tham chiếu ở đây (tránh hard-code trong code).
 policy_versioning:
+  refund_current_doc_id: "policy_refund_v4"
+  refund_current_window: "7 ngày làm việc"
+  refund_forbidden_window: "14 ngày làm việc"
   hr_leave_min_effective_date: "2026-01-01"
+  access_control_min_effective_date: "2026-01-01"
+
+artifacts:
+  latest_manifest: "artifacts/manifests/manifest_2026-06-10T08-19Z.json"
+  latest_cleaned_csv: "artifacts/cleaned/cleaned_2026-06-10T08-19Z.csv"
+  latest_quarantine_csv: "artifacts/quarantine/quarantine_2026-06-10T08-19Z.csv"
+  latest_grading_jsonl: "artifacts/eval/grading_run_final.jsonl"
+
+embedding:
+  vector_store: "Chroma"
+  collection: "day10_kb"
+  idempotency_strategy: "upsert stable chunk_id and prune removed ids"
