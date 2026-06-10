@@ -3,7 +3,7 @@
 
 version: "1.0"
 dataset: "kb_chunk_export"
-owner_team: "__TODO__"
+owner_team: "CS + IT Helpdesk Data Pipeline Team"
 
 schema_cleaned:
   chunk_id:
@@ -54,6 +54,7 @@ allowed_doc_ids:
   - sla_p1_2026
   - it_helpdesk_faq
   - hr_leave_policy
+  - access_control_sop
 
 # Merit/Distinction: có thể đưa cutoff versioning vào env và tham chiếu ở đây (tránh hard-code trong code).
 policy_versioning:
